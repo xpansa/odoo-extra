@@ -26,7 +26,8 @@ from dateutil.relativedelta import relativedelta
 import requests
 from matplotlib.font_manager import FontProperties
 from matplotlib.textpath import TextToPath
-import werkzeug
+import werkzeug.utils
+import werkzeug.wrappers
 
 import openerp
 from openerp import http, SUPERUSER_ID
@@ -243,9 +244,9 @@ class runbot_repo(osv.osv):
             p1 = subprocess.Popen(['git', '--git-dir=%s' % repo.path, 'archive', treeish], stdout=subprocess.PIPE)
             p2 = subprocess.Popen(['tar', '-xC', dest], stdin=p1.stdout, stdout=subprocess.PIPE)
             p1.stdout.close()  # Allow p1 to receive a SIGPIPE if p2 exits.
-            p2.communicate()[0]
+            p2.communicate()
 
-    def github(self, cr, uid, ids, url, payload=None, ignore_errors=False, context=None):
+    def gh(self, cr, uid, ids, url, payload=None, ignore_errors=False, mimetype=None, params=None, context=None):
         """Return a http request to be sent to github"""
         for repo in self.browse(cr, uid, ids, context=context):
             if not repo.token:
@@ -258,18 +259,23 @@ class runbot_repo(osv.osv):
                     url = 'https://api.%s%s' % (match_object.group(1),url)
                     session = requests.Session()
                     session.auth = (repo.token,'x-oauth-basic')
-                    session.headers.update({'Accept': 'application/vnd.github.she-hulk-preview+json'})
+                    if mimetype:
+                        session.headers['Accept'] = mimetype
                     if payload:
-                        response = session.post(url, data=simplejson.dumps(payload))
+                        response = session.post(url, data=simplejson.dumps(payload), **(params or {}))
                     else:
-                        response = session.get(url)
+                        response = session.get(url, **(params or {}))
                     response.raise_for_status()
-                    return response.json()
+                    return response
             except Exception:
                 if ignore_errors:
                     _logger.exception('Ignored github error %s %r', url, payload)
+                    return response
                 else:
                     raise
+
+    def github(self, cr, uid, ids, url, payload=None, ignore_errors=False, context=None):
+        return self.gh(cr, uid, ids, url, payload=payload, ignore_errors=ignore_errors, mimetype='application/json', context=context).json()
 
     def update(self, cr, uid, ids, context=None):
         for repo in self.browse(cr, uid, ids, context=context):
@@ -528,6 +534,7 @@ class runbot_build(osv.osv):
                 result[build.id] = "%s:%s" % (domain, build.port)
         return result
 
+    INCLUDED_SERVER = 'builtin'
     _columns = {
         'branch_id': fields.many2one('runbot.branch', 'Branch', required=True, ondelete='cascade', select=1),
         'repo_id': fields.related(
@@ -564,7 +571,7 @@ class runbot_build(osv.osv):
         'job_time': fields.function(_get_time, type='integer', string='Job time'),
         'job_age': fields.function(_get_age, type='integer', string='Job age'),
         'duplicate_id': fields.many2one('runbot.build', 'Corresponding Build'),
-        'server_match': fields.selection([('builtin', 'This branch includes Odoo server'),
+        'server_match': fields.selection([(INCLUDED_SERVER, 'This branch includes Odoo server'),
                                           ('exact', 'PR target or matching name prefix found'),
                                           ('fuzzy', 'Fuzzy - common ancestor found'),
                                           ('default', 'No match found - defaults to master')],
@@ -762,7 +769,7 @@ class runbot_build(osv.osv):
                 shutil.move(build.path('bin'), build.server())
 
             has_server = os.path.isfile(build.server('__init__.py'))
-            server_match = 'builtin'
+            server_match = self.INCLUDED_SERVER
 
             # build complete set of modules to install
             modules_to_move = []
@@ -773,6 +780,9 @@ class runbot_build(osv.osv):
             _logger.debug("manual modules_to_test for build %s: %s", build.dest, modules_to_test)
 
             if not has_server:
+                # easier to debug if we don't default to "the server is
+                # totally included in this misconfigured repository"
+                server_match = False
                 if build.repo_id.modules_auto == 'repo':
                     modules_to_test += [
                         os.path.basename(os.path.dirname(a))
@@ -1083,7 +1093,7 @@ class runbot_build(osv.osv):
             # run job
             pid = None
             if build.state != 'done':
-                build.logger('running %s', build.job)
+                build.logger('running %s: %s', build, build.job)
                 job_method = getattr(self,build.job)
                 mkdirs([build.path('logs')])
                 lock_path = build.path('logs', '%s.lock' % build.job)
@@ -1371,7 +1381,6 @@ class RunbotController(http.Controller):
             'name': build.name,
             'state': real_build.state,
             'result': real_build.result,
-            'subject': build.subject,
             'author': build.author,
             'committer': build.committer,
             'dest': build.dest,

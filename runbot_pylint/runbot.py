@@ -193,35 +193,68 @@ class runbot_build(models.Model):
         # printing of report to stdout?
         # reporter.display_reports(None)
 
-        # format messages as {file_path: {line: {type, message}}}
-        # possible issue: multiple warnings on the same line of the same file?
-        prefix = build.path('')
-        messages = {}
-        for m in reporter.messages:
-            messages.setdefault(m['path'].replace(prefix, ''), {})[m['line']] = {
-                'message': m['message'],
-                'type': m['type'],
-            }
-
-        try:
-            for f, lineno, msg in self._match_messages_to_patch(
-                    messages, moved_path_map, patch_lines):
-                comment = self._format_lint_message_for_pr(msg)
-                self._comment_on_pr(build, p, f, lineno, comment)
-        except Exception:
-            _logger.exception("Trying to find out patched lines failed")
-
-            build._lint_state_to(
-                'failure',
-                "Something went wrong with the inline comments generation"
-            )
-        else:
-            build._lint_state_to(
-                'failure',
-                "Detected {} linting issues".format(len(reporter.messages))
-            )
+        self._report_failure(build, p, reporter, patch_lines, moved_path_map)
 
         return -2
+
+    def _report_failure(self, build, p, reporter, patch_lines, moved_path_map):
+        failure_message = "Detected {} linting issues".format(len(reporter.messages))
+        cr, uid, context = build._cr, build._uid, build._context
+
+        Logging = self.pool['ir.logging']
+        Logging.create(cr, uid, {
+            'build_id': build.id,
+            'level': 'WARNING',
+            'type': 'runbot',
+            'name': 'lint',
+            'message': failure_message,
+            'path': 'runbot',
+            'func': 'odoo.runbot',
+            'line': '0',
+        }, context=context)
+        prefix = build.path('')
+        for m in reporter.messages:
+            path = m['path'].replace(prefix, '')
+            original_path = moved_path_map.get(path, path)
+            Logging.create(cr, uid, {
+                'build_id': build.id,
+                'level': 'INFO',
+                'type': 'runbot',
+                'name': original_path,
+                'message': m['message'],
+                'path': original_path,
+                'func': m['type'],
+                'line': str(m['line']),
+            })
+        build._lint_state_to('failure', description=failure_message)
+
+        # format messages as {file_path: {line: {type, message}}}
+        # possible issue: multiple warnings on the same line of the same file?
+        # messages = {}
+        # for m in reporter.messages:
+        #     messages.setdefault(m['path'].replace(prefix, ''), {})[
+        #         m['line']] = {
+        #         'message': m['message'],
+        #         'type': m['type'],
+        #     }
+        # try:
+        #     for f, lineno, msg in self._match_messages_to_patch(
+        #             messages, moved_path_map, patch_lines):
+        #         comment = self._format_lint_message_for_pr(msg)
+        #         self._comment_on_pr(build, p, f, lineno, comment)
+        # except Exception:
+        #     _logger.exception("Trying to find out patched lines failed")
+        #
+        #     build._lint_state_to(
+        #             'failure',
+        #             "Something went wrong with the inline comments generation"
+        #     )
+        # else:
+        #     build._lint_state_to(
+        #             'failure',
+        #             "Detected {} linting issues".format(
+        #                 len(reporter.messages))
+        #     )
 
     def _init_linter(self, reporter, build_path, patch_lines):
         # riff on pylint.lint.Run.__init__

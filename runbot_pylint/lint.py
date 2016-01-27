@@ -65,6 +65,14 @@ class Linter(lint.PyLinter):
         super(Linter, self).__init__(*args, **kwargs)
 
     def is_message_enabled(self, msg_descr, line=None, confidence=None):
+        # ignore pointless statement warning in manifest file
+        if (self.current_file or '').endswith('__openerp__.py'):
+            # msg_descr can be either the symbolic code or the prefixed
+            # numerical code, get the canonical symbolic code
+            message_definition = self.msgs_store.check_message_id(msg_descr)
+            if message_definition.symbol == 'pointless-statement':
+                return False
+
         # there are cases where current_file is None, not sure what they mean
         # but we'll default to leaving them through
         if self.current_file and self._lines_map is not None:

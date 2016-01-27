@@ -1,5 +1,4 @@
 # -*- encoding: utf-8 -*-
-
 import contextlib
 import datetime
 import fcntl
@@ -184,13 +183,10 @@ class runbot_repo(osv.osv):
         return result
 
     def _get_base(self, cr, uid, ids, field_name, arg, context=None):
-        result = {}
-        for repo in self.browse(cr, uid, ids, context=context):
-            name = re.sub('.+@', '', repo.name)
-            name = re.sub('.git$', '', name)
-            name = name.replace(':','/')
-            result[repo.id] = name
-        return result
+        return {
+            repo.id: '%(domain)s/%(owner)s/%(repo)s' % repo._match_name()
+            for repo in self.browse(cr, uid, ids, context=context)
+        }
 
     _columns = {
         'name': fields.char('Repository', required=True),
@@ -222,6 +218,26 @@ class runbot_repo(osv.osv):
         'job_timeout': 30,
     }
 
+    def _match_name(self):
+        """ Extract the relevant repository metadata from the repository name,
+        returns either None (if the name is not matchable) or a dictionary
+        of {domain, owner, repo}
+        """
+        # TODO: support for ssh:// and https?://
+        m = re.match(r"""
+            ^
+            git @ (?P<domain>[^:]+)
+            :
+            (?P<owner>[^/]+) / (?P<repo>\w+)
+            $
+            """,
+            self.name,
+            re.VERBOSE
+        )
+        if not m:
+            return None
+        return m.groupdict()
+
     def domain(self, cr, uid, context=None):
         domain = self.pool.get('ir.config_parameter').get_param(cr, uid, 'runbot.domain', fqdn())
         return domain
@@ -246,36 +262,91 @@ class runbot_repo(osv.osv):
             p1.stdout.close()  # Allow p1 to receive a SIGPIPE if p2 exits.
             p2.communicate()
 
-    def gh(self, cr, uid, ids, url, payload=None, ignore_errors=False, mimetype=None, params=None, context=None):
-        """Return a http request to be sent to github"""
+    def _expand_api_uri(self, api_template, **values):
+        """ Expands github API URI (uri templates with :samp:`:{name}`
+        variables inside, copied straight from the API documentation).
+
+        Automatically handles ``:owner`` and ``:repo`` based on the current
+        repository's information, other variables to inject should be passed
+        as kwargs.
+
+        Returns a full API URL including the domain.
+        """
+        v = self._match_name()
+        v.update(values)
+        v['_path'] = re.sub(r':(\w+)', lambda k: str(v[k.group(1)]), api_template)
+
+        return 'https://api.%(domain)s%(_path)s' % v
+
+    def _api_request(self, resource, method=None, payload=None, **kw):
+        """ Performs a github API request using the current repository's auth
+        token (if any).
+
+        * if the method is provided, just forward it to ``requests`` as is
+        * otherwise, if no payload is provided ``GET`` the resource, and if
+          a payload is provided POST the json-encoded payload to the resource
+
+        All other keyword arguments are forwarded as-is to ``requests``. If
+        both ``payload`` and ``data`` are provided the explicitly provided
+        ``data`` will be used, though the presence of a payload will still
+        trigger POST-ing to the resource.
+
+        :param str resource: API resource to interact with
+        :param str method: HTTP method as understood by
+                           :func:`requests.request`, or ``None`` to infer from
+                           payload
+        :param dict payload: data to JSON-encode and POST to the resource
+        :returns: :class:`request.Response` object
+        """
+        if not self.token:
+            return # FIXME:
+
+        data = None
+        if method is None:
+            if payload is None:
+                method = 'GET'
+            else:
+                method = 'POST'
+                data = simplejson.dumps(payload)
+
+        return requests.request(
+            method, resource,
+            auth=(self.token, 'x-oauth-basic'),
+            data=kw.get('data', data),
+            **kw
+        )
+
+    def github(self, cr, uid, ids, url, payload=None, ignore_errors=False, context=None):
+        """ GET github API resource ``url`` or POST ``payoad`` to it. ``url``
+        can be an API uri template thing (not in the :rfc:`6570` sense).
+
+        Checks for 4xy and 5xy statuses by default, if ``ignore_errors`` is
+        set logs and ignores them instead.
+
+        In case of success, returns the deserialized ``json`` response data.
+
+        .. deprecated:: master
+
+            use :meth:`~._api_request`, :meth:`~._expand_api_uri` and
+            :class:`requests.Response` directly.
+        """
         for repo in self.browse(cr, uid, ids, context=context):
-            if not repo.token:
-                return
             try:
-                match_object = re.search('([^/]+)/([^/]+)/([^/.]+(.git)?)', repo.base)
-                if match_object:
-                    url = url.replace(':owner', match_object.group(2))
-                    url = url.replace(':repo', match_object.group(3))
-                    url = 'https://api.%s%s' % (match_object.group(1),url)
-                    session = requests.Session()
-                    session.auth = (repo.token,'x-oauth-basic')
-                    if mimetype:
-                        session.headers['Accept'] = mimetype
-                    if payload:
-                        response = session.post(url, data=simplejson.dumps(payload), **(params or {}))
-                    else:
-                        response = session.get(url, **(params or {}))
-                    response.raise_for_status()
-                    return response
+                response = repo._api_request(
+                    repo._expand_api_uri(url),
+                    payload=payload,
+                    headers={'Accept': 'application/json'},
+                )
+                # no token on first repo -> bail out
+                if not response:
+                    return
+                response.raise_for_status()
+                return response.json()
             except Exception:
                 if ignore_errors:
                     _logger.exception('Ignored github error %s %r', url, payload)
-                    return response
                 else:
                     raise
-
-    def github(self, cr, uid, ids, url, payload=None, ignore_errors=False, context=None):
-        return self.gh(cr, uid, ids, url, payload=payload, ignore_errors=ignore_errors, mimetype='application/json', context=context).json()
 
     def update(self, cr, uid, ids, context=None):
         for repo in self.browse(cr, uid, ids, context=context):
@@ -485,12 +556,21 @@ class runbot_branch(osv.osv):
     }
 
     def _get_pull_info(self, cr, uid, ids, context=None):
-        assert len(ids) == 1
-        branch = self.browse(cr, uid, ids[0], context=context)
+        branch = self.browse(cr, uid, ids, context=context)
         repo = branch.repo_id
         if repo.token and branch.name.startswith('refs/pull/'):
             pull_number = branch.name[len('refs/pull/'):]
-            return repo.github('/repos/:owner/:repo/pulls/%s' % pull_number, ignore_errors=True) or {}
+            try:
+                r = repo._api_request(
+                    repo._expand_api_uri(
+                        '/repos/:owner/:repo/pulls/:number',
+                        number=pull_number
+                    )
+                )
+                r.raise_for_status()
+                return r.json()
+            except Exception:
+                _logger.exception("Ignored error fetching info for PR %s", pull_number)
         return {}
 
 class runbot_build(osv.osv):
@@ -928,7 +1008,20 @@ class runbot_build(osv.osv):
                 "context": "ci/runbot"
             }
             _logger.debug("github updating status %s to %s", build.name, state)
-            build.repo_id.github('/repos/:owner/:repo/statuses/%s' % build.name, status, ignore_errors=True)
+            build._update_status(status)
+
+    def _update_status(self, status):
+        repo_id = self.repo_id
+        uri = repo_id._expand_api_uri(
+            '/repos/:owner/:repo/statuses/:sha',
+            sha=self.name)
+        response = repo_id._api_request(uri, payload=status)
+        if not response.ok:
+            _logger.error(
+                "Failed to update status of %s to %s: HTTP Error %s (%s)",
+                self.name, status, response.status_code, response.text()
+            )
+
 
     def job_00_init(self, cr, uid, build, lock_path, log_path):
         build._log('init', 'Init build environment')

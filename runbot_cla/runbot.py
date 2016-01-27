@@ -33,6 +33,6 @@ class runbot_build(openerp.models.Model):
                 "context": "legal/cla"
             }
             build._log('check_cla', 'CLA %s' % state)
-            build.repo_id.github('/repos/:owner/:repo/statuses/%s' % build.name, status, ignore_errors=True)
+            build._update_status(status)
         # 0 is myself, -1 is everybody else, -2 nothing
         return -2

@@ -143,12 +143,11 @@ class runbot_build(models.Model):
         _logger.info("lint state of %s changed to %s (%s)",
                      self.name, state, description)
         self.branch_id.lint = state
-        self.repo_id.github('/repos/:owner/:repo/statuses/%s' % self.name, {
+        self._update_status({
             'state': state,
             'description': description or "Linting",
             'context': 'ci/lint',
-            # 'target_url': ???
-        }, ignore_errors=True)
+        })
 
     def job_05_check_lint(self, cr, uid, build, lock_path, log_path):
         p = build.branch_id._get_pull_info()
@@ -158,9 +157,13 @@ class runbot_build(models.Model):
 
         build._lint_state_to('pending')
 
-        diff = build.branch_id.repo_id.gh(
-            '/repos/:owner/:repo/pulls/%s' % p['number'],
-            mimetype='application/vnd.github.v3.diff', params={'stream': True},
+        diff = build.repo_id._api_request(
+            build.repo_id._expand_api_uri(
+                '/repos/:owner/:repo/pulls/:number',
+                number=p['number']
+            ),
+            headers={'Accept': 'application/vnd.github.v3.diff'},
+            stream=True,
         )
         if diff.status_code != requests.codes.ok:
             _logger.warn("Failed to get diff for branch %s: %s",
@@ -361,9 +364,13 @@ class runbot_build(models.Model):
             'body': comment,
         }
         _logger.info("Annotating PR %d with %s", pr_info['number'], payload)
-        build.repo_id.github(
-            url='/repos/:owner/:repo/pulls/{}/comments'.format(pr_info['number']),
-            payload=payload)
+        build.repo_id._api_request(
+            build.repo_id._expand_api_uri(
+                '/repos/:owner/:repo/pulls/:number/comments',
+                number=pr_info['number']
+            ),
+            payload=payload,
+        ).raise_for_status()
 
     def _format_lint_message_for_pr(self, msg):
         """ Format a pylint message to a PR comment body.

@@ -1,4 +1,152 @@
 <odoo>
+    <record id="lint_config" model="runbot_pylint.config">
+        <field name="plugins">edx_lint.pylint</field>
+    </record>
+    <function model="runbot_pylint.config"
+              name="reload_messages"
+              eval="[ref('runbot_pylint.lint_config')]"/>
+    <function model="runbot_pylint.config"
+              name="_select_messages"
+              eval="[
+ref('runbot_pylint.lint_config'),
+[
+    'literal-used-as-attribute',
+    'translation-of-non-string',
+    'test-inherits-tests',
+    'simplifiable-range',
+    'wrong-assert-type',
+    'super-method-not-called',
+    'non-parent-method-called',
+
+
+    'simplifiable-if-statement',
+    'redefined-variable-type',
+
+    'import-self',
+    'reimported',
+    'relative-import',
+    'wildcard-import',
+    'misplaced-future',
+    'wrong-import-order',
+    'ungrouped-imports',
+    'multiple-imports',
+
+    'unbalanced-tuple-unpacking',
+    'undefined-variable',
+    'used-before-assignment',
+    'cell-var-from-loop',
+    'global-variable-undefined',
+    'unused-import',
+    'unused-variable',
+    'global-variable-not-assigned',
+    'undefined-loop-variable',
+    'global-at-module-level',
+
+    'bad-open-mode',
+    'redundant-unittest-assert',
+    'boolean-datetime',
+    'deprecated-method',
+
+    'anomalous-unicode-escape-in-string',
+    'anomalous-backslash-in-string',
+
+    'not-in-loop',
+    'continue-in-finally',
+    'duplicate-argument-name',
+
+    'return-outside-function',
+    'return-arg-in-generator',
+    'nonexistent-operator',
+    'yield-outside-function',
+    'lost-exception',
+    'assert-on-tuple',
+    'dangerous-default-value',
+    'duplicate-key',
+    'useless-else-on-loop',
+    'expression-not-assigned',
+    'unnecessary-lambda',
+    'pointless-statement',
+    'pointless-string-statement',
+    'unnecessary-pass',
+    'unreachable',
+    'using-constant-test',
+    'misplaced-comparison-constant',
+    'singleton-comparison',
+    'unneeded-not',
+    'consider-using-enumerate',
+    'empty-docstring',
+
+    'bad-super-call',
+    'missing-super-argument',
+
+    'not-an-iterable',
+    'not-a-mapping',
+
+    'format-needs-mapping',
+    'truncated-format-string',
+    'missing-format-string-key',
+    'mixed-format-string',
+    'too-few-format-args',
+    'bad-str-strip-call',
+    'too-many-format-args',
+    'bad-format-character',
+    'bad-format-string-key',
+
+    'bad-indentation',
+    'mixed-indentation',
+    'unnecessary-semicolon',
+    'bad-whitespace',
+    'missing-final-newline',
+    'mixed-line-endings',
+    'multiple-statements',
+    'trailing-whitespace',
+    'unexpected-line-ending-format',
+
+    'logging-format-truncated',
+    'logging-too-few-args',
+    'logging-too-many-args',
+    'logging-unsupported-format',
+    'logging-not-lazy',
+
+    'bad-except-order',
+    'catching-non-exception',
+    'notimplemented-raised',
+    'raising-bad-type',
+    'raising-non-exception',
+    'misplaced-bare-raise',
+    'duplicate-except',
+    'binary-op-exception',
+] ]"/>
+
+    <record id="runbot.view_runbot_pylint_configuration" model="ir.ui.view">
+        <field name="name">Configure Runbot Pylint Support</field>
+        <field name="inherit_id" ref="runbot.view_runbot_configuration"/>
+        <field name="model">runbot.config.settings</field>
+        <field name="arch" type="xml">
+            <xpath expr="group" position="after">
+                <group>
+                    <label string="PyLint" for="id"/>
+                    <div>
+                        <!--
+                            apparently refuses to load related fields if this
+                            is not present in the view
+                        -->
+                        <field name="config_id" invisible="1"/>
+                        <div>
+                            <field name="plugins" class="oe_inline"/>
+                            <label for="plugins"/>
+                        </div>
+                        <separator/>
+                        <div>
+                            <field name="lint_ids"
+                                   widget="many2many_checkboxes"/>
+                        </div>
+                    </div>
+                </group>
+            </xpath>
+        </field>
+    </record>
+
     <template id="runbot_pylint.showstate">
         <t t-if="lint_state and lint_state != 'empty'">
             <t t-if="lint_state == 'success'">

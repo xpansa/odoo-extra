@@ -11,115 +11,6 @@ from . import lint
 
 _logger = logging.getLogger(__name__)
 
-# get that from the code? From the runbot confix?
-ENABLED_LINTS = [
-    ## edx_lint
-    'literal-used-as-attribute',
-    'translation-of-non-string',
-    'test-inherits-tests',
-    'simplifiable-range',
-    'wrong-assert-type',
-    'super-method-not-called',
-    'non-parent-method-called',
-    ## pylint base
-    'simplifiable-if-statement',
-    'redefined-variable-type',
-    # imports checker
-    'import-self',
-    'reimported',
-    'relative-import',
-    'wildcard-import',
-    'misplaced-future',
-    'wrong-import-order',
-    'ungrouped-imports',
-    'multiple-imports',
-    # variables checker
-    'unbalanced-tuple-unpacking',
-    'undefined-variable',
-    'used-before-assignment',
-    'cell-var-from-loop',
-    'global-variable-undefined',
-    'unused-import',
-    'unused-variable',
-    'global-variable-not-assigned',
-    'undefined-loop-variable',
-    'global-at-module-level',
-    # stdlib checker
-    'bad-open-mode',
-    'redundant-unittest-assert',
-    'boolean-datetime',
-    'deprecated-method',
-    # string checker
-    'anomalous-unicode-escape-in-string',
-    'anomalous-backslash-in-string',
-    # base checker
-    'not-in-loop',
-    'continue-in-finally',
-    'duplicate-argument-name',
-    # 'return-in-init',
-    'return-outside-function',
-    'return-arg-in-generator',
-    'nonexistent-operator',
-    'yield-outside-function',
-    'lost-exception',
-    'assert-on-tuple',
-    'dangerous-default-value',
-    'duplicate-key',
-    'useless-else-on-loop',
-    'expression-not-assigned',
-    'unnecessary-lambda',
-    'pointless-statement',
-    'pointless-string-statement',
-    'unnecessary-pass',
-    'unreachable',
-    'using-constant-test',
-    'misplaced-comparison-constant',
-    'singleton-comparison',
-    'unneeded-not',
-    'consider-using-enumerate',
-    'empty-docstring',
-    # newstyle checker
-    'bad-super-call',
-    'missing-super-argument',
-    # iterables checker
-    'not-an-iterable',
-    'not-a-mapping',
-    # more strings checker
-    'format-needs-mapping',
-    'truncated-format-string',
-    'missing-format-string-key',
-    'mixed-format-string',
-    'too-few-format-args',
-    'bad-str-strip-call',
-    'too-many-format-args',
-    'bad-format-character',
-    'bad-format-string-key',
-    # format checker
-    'bad-indentation',
-    'mixed-indentation',
-    'unnecessary-semicolon',
-    'bad-whitespace',
-    'missing-final-newline',
-    'mixed-line-endings',
-    'multiple-statements',
-    'trailing-whitespace',
-    'unexpected-line-ending-format',
-    # logging checker
-    'logging-format-truncated',
-    'logging-too-few-args',
-    'logging-too-many-args',
-    'logging-unsupported-format',
-    'logging-not-lazy',
-    # exceptions checker
-    'bad-except-order',
-    'catching-non-exception',
-    'notimplemented-raised',
-    'raising-bad-type',
-    'raising-non-exception',
-    'misplaced-bare-raise',
-    'duplicate-except',
-    'binary-op-exception',
-]
 
 class RunbotBranch(models.Model):
     _inherit = 'runbot.branch'
@@ -149,7 +40,8 @@ class runbot_build(models.Model):
             'context': 'ci/lint',
         })
 
-    def job_05_check_lint(self, cr, uid, build, lock_path, log_path):
+    @api.model
+    def job_05_check_lint(self, build, lock_path, log_path):
         p = build.branch_id._get_pull_info()
         if not p:
             _logger.info("Found no pull information, ignoring linting")
@@ -194,10 +86,10 @@ class runbot_build(models.Model):
         paths = [build.path('openerp')]
 
         with fix_import_path(paths):
-            self._init_linter(
-                reporter,
-                build.path(),
-                patch_lines
+            self.env['runbot_pylint.config'].search([], limit=1)._init_linter(
+                reporter=reporter,
+                diff=patch_lines,
+                refpath=build.path()
             ).check(paths)
 
         if not reporter.messages:
@@ -270,27 +162,6 @@ class runbot_build(models.Model):
         #             "Detected {} linting issues".format(
         #                 len(reporter.messages))
         #     )
-
-    def _init_linter(self, reporter, build_path, patch_lines):
-        # riff on pylint.lint.Run.__init__
-
-        linter = lint.Linter(
-            reporter=reporter,
-            diff=patch_lines,
-            refpath=build_path
-        )
-        linter.load_default_plugins()
-        # edx_lint, odoo_lint
-        linter.load_plugin_modules(['edx_lint.pylint', ])
-
-        # TODO: load config file? from working copy?
-
-        # enable only the specific lints we care for
-        linter.disable('all')
-        for msgid in ENABLED_LINTS:
-            linter.enable(msgid)
-
-        return linter
 
     def _match_messages_to_patch(self, messages, moved_path_map, patch_lines):
         """ Take all of the lint ``messages`` and find out which section of

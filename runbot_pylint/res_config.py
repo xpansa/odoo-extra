@@ -4,7 +4,7 @@ from openerp import api, fields, models
 from openerp.tools.translate import _
 
 from . import lint
-
+from . import lints
 
 class RunbotConfig(models.TransientModel):
     _inherit = 'runbot.config.settings'

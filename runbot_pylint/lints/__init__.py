@@ -11,6 +11,39 @@ def register(linter):
 
 
 class LiteralDictUpdate(BaseChecker):
+    """Looks for calls to dict.update and warns about .update calls whose
+    arguments are "static dicts" in that the dict is created at the update
+    callsite either through a literal dictionary parameter or through
+    keyword arguments to update: dict.update(literal_dict) is a bunch of
+    needless extra complexity, and while dict.update(**kw) has less redundancy
+    than a bunch of dict[key] = value, it's also quite a bit slower:
+
+    +----------+--------------+-------------------+---------------+
+    |# of items|d[key] = value|d.update(key=value)|d.update({...})|
+    +----------+--------------+-------------------+---------------+
+    |         1|            1x|               3.5x|           6.3x|
+    +----------+--------------+-------------------+---------------+
+    |         5|            1x|               1.9x|           2.3x|
+    +----------+--------------+-------------------+---------------+
+    |        10|            1x|                 2x|           2.1x|
+    +----------+--------------+-------------------+---------------+
+    |        25|            1x|               2.2x|             2x|
+    +----------+--------------+-------------------+---------------+
+
+    That's in CPython 2.7 on OSX, pypy (4.0.1) has a pretty different
+    profile though still always favoring setitem:
+
+    - for 1 and 5 keys, all methods are within a few %
+    - at 10 keys, the literal dict method takes 50% longer than
+      setitem and update(**kw)
+    - at 25 keys, the update(literal) method takes 3x the base, and
+      the update(**kw) takes 11 times the base
+
+    The performances of the setitem version are (as one would expect)
+    linear on both interpreters, and pypy is faster (by a factor of 3
+    to 10) in all cases but the 25-keys update(**kw) where ~0.6x
+    slower.
+    """
     __implements__ = [IAstroidChecker]
 
     name = 'update-literal'

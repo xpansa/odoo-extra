@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import os
 import textwrap
 
 import astroid
@@ -6,9 +7,13 @@ import astroid.util
 from pylint.checkers import BaseChecker, utils
 from pylint.interfaces import IAstroidChecker
 
+from openerp.tools.translate import TinyPoFile
+from openerp.modules import module
 
 def register(linter):
     linter.register_checker(LiteralDictUpdate(linter))
+    linter.register_checker(LeftoverDebugging(linter))
+    linter.register_checker(MissingTranslationTemplate(linter))
 
 BASE_ID = 78 # completely arbitrary value
 def MSGID(code, severity='E'):
@@ -163,3 +168,69 @@ class LeftoverDebugging(BaseChecker):
         if (node.func.attrname, len(node.args)) in self._CALL_MATCHES:
             self.add_message(
                 self.MESSAGE_ID, args=node.as_string(), node=node)
+
+POFILE_SOURCE_INDEX = 3
+class MissingTranslationTemplate(BaseChecker):
+    """
+    If a translatable string has been added or modified, verify that the
+    new string is present in the module's POT
+    """
+    __implements__ = [IAstroidChecker]
+
+    name = MESSAGE_ID = 'translation-missing'
+
+    msgs = {
+        MSGID(3): (
+            "Couldn't find POT key for translatable string %r in module %s",
+            MESSAGE_ID,
+            "Verifies that translatable strings are present in POT files",
+        ),
+    }
+
+    def visit_call(self, node):
+        if not isinstance(node.func, astroid.Name):
+            return
+
+        # only translation function supported in odoo (?)
+        if node.func.name != '_':
+            return
+
+        # check that lint is enabled before starting the expensive stuff
+        if not self.linter.is_message_enabled(self.MESSAGE_ID, line=node.fromlineno):
+            return
+
+        # just in case
+        first = node.args[0]
+        if not isinstance(first, astroid.Const):
+            return
+
+        translatable = first.value
+        if not isinstance(translatable, basestring):
+            return
+
+        path = node.root().source_file
+        if not path:
+            return
+
+        modpath = module.get_module_root(path)
+        # TODO: not in a module, translation should be in base but how to get path?
+        if modpath is None:
+            return
+
+        _, modname = os.path.split(modpath)
+        potpath = os.path.join(modpath, 'i18n', modname+'.pot')
+        # we're in a module but there is no POT file, maybe warn about that?
+        # Or leave it to a different lint?
+        if not os.path.exists(potpath):
+            return
+
+        # is the translatable string present (as a source) in the POT file?
+        with open(potpath, 'rb') as f:
+            if any(r[POFILE_SOURCE_INDEX] == translatable for r in TinyPoFile(f)):
+                return
+
+        self.add_message(
+            self.MESSAGE_ID,
+            args=(translatable, modname),
+            node=node,
+        )

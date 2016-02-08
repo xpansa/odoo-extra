@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import logging
 
 from openerp import api, fields, models
 from openerp.tools.translate import _
@@ -6,6 +7,7 @@ from openerp.tools.translate import _
 from . import lint
 from . import lints
 
+logger = logging.getLogger(__name__)
 class RunbotConfig(models.TransientModel):
     _inherit = 'runbot.config.settings'
 
@@ -16,6 +18,11 @@ class RunbotConfig(models.TransientModel):
 
     plugins = fields.Char(related='config_id.plugins')
     lint_ids = fields.Many2many(related='config_id.lint_ids')
+
+    @api.multi
+    def reload_messages(self):
+        self.config_id.reload_messages()
+        return True
 
 class Configuration(models.Model):
     _name = 'runbot_pylint.config'
@@ -88,6 +95,15 @@ class Configuration(models.Model):
                 'symbol': message.symbol,
                 'label': message.descr,
             })
+
+        logger.info(
+            "Reloading lints: %d plugins, %d messages, created %d, enabled %d, disabled %d",
+            len(self.plugins.split(',')),
+            len(all_messages),
+            len(to_create),
+            len(to_enable),
+            len(to_disable),
+        )
 
 class Lint(models.Model):
     _name = 'runbot_pylint.config.lint'

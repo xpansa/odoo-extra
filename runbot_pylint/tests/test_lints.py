@@ -4,7 +4,8 @@ import unittest
 import astroid
 from pylint.testutils import CheckerTestCase, UnittestLinter
 
-from ..lints import LeftoverDebugging, LiteralDictUpdate, NonLiteralSQL
+from ..lints import LeftoverDebugging, LiteralDictUpdate, NonLiteralSQL, \
+    SuperProxyEnvChange
 
 
 # support line= kwarg in is_message_enabled of mock linter cf PyCQA/pylint/pull/809
@@ -189,3 +190,32 @@ class TestNonLiteralSQL(CheckerCase):
         cr.execute(foo)
         """))
         self.assertNotEqual(self.linter.release_messages(), [])
+
+class TestChangeEnvOnSuperProxy(CheckerCase):
+    CHECKER_CLASS = SuperProxyEnvChange
+
+    def test_with_env(self):
+        self.walk(astroid.parse("""
+        super(Type, self).with_env(self.env(context={})).create({})
+        """))
+        self.assertNotEqual(self.linter.release_messages(), [])
+
+    def test_sudo(self):
+        self.walk(astroid.parse("""
+        super(Type, self).sudo().create({})
+        """))
+        self.assertNotEqual(self.linter.release_messages(), [])
+
+    def test_with_context(self):
+        self.walk(astroid.parse("""
+        super(Type, self).with_context(key=3).create({})
+        """))
+        self.assertNotEqual(self.linter.release_messages(), [])
+
+    def test_recordset(self):
+        with self.assertNoMessages():
+            self.walk(astroid.parse("""
+            class Thing(Model):
+                def do_thing(self):
+                    return self.sudo().create({})
+            """))

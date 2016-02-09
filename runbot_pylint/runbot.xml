@@ -121,6 +121,7 @@ ref('runbot_pylint.lint_config'),
     'debugging-leftover',
     'translation-missing',
     'non-literal-sql',
+    'super-proxy-env-change',
 ] ]"/>
 
     <record id="runbot.view_runbot_pylint_configuration" model="ir.ui.view">

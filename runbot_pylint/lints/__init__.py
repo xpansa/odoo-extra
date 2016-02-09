@@ -3,6 +3,7 @@ import os
 import textwrap
 
 import astroid
+import astroid.exceptions
 import astroid.util
 from pylint.checkers import BaseChecker, utils
 from pylint.interfaces import IAstroidChecker
@@ -15,6 +16,7 @@ def register(linter):
     linter.register_checker(LeftoverDebugging(linter))
     linter.register_checker(MissingTranslationTemplate(linter))
     linter.register_checker(NonLiteralSQL(linter))
+    linter.register_checker(SuperProxyEnvChange(linter))
 
 BASE_ID = 78 # completely arbitrary value
 def MSGID(code, severity='E'):
@@ -302,3 +304,51 @@ def is_literal_string(node):
         isinstance(node, astroid.Const)
         and isinstance(node.value, basestring)
     )
+
+class SuperProxyEnvChange(BaseChecker):
+    """
+    Environment-altering methods mustn't be called on super()'s proxy object
+    """
+    __implements__ = [IAstroidChecker]
+
+    name = MESSAGE_ID = 'super-proxy-env-change'
+
+    msgs = {
+        MSGID(5): (
+            "Calling an env-altering method on the result of super() is "
+            "incorrect, it should be called on the `self` passed to super()",
+            MESSAGE_ID,
+            "Checks that env-altering or env-replacing Model methods aren't "
+            "being called on the *result* of super(), as the interaction is "
+            "broken. These methods should be called on the 'instance' "
+            "(second) parameter instead.",
+        )
+    }
+
+    def visit_call(self, node, ENV_CHANGES=('sudo', 'with_context', 'with_env')):
+        if not isinstance(node.func, astroid.Attribute):
+            return
+
+        attr = node.func
+        if attr.attrname not in ENV_CHANGES:
+            return
+
+        if not self.linter.is_message_enabled(self.MESSAGE_ID, line=node.fromlineno):
+            return
+
+        # try to infer what the subject of the method call is, if unresolvable
+        # consider it's fine
+        try:
+            subjects = list(attr.expr.infer())
+        except astroid.exceptions.UnresolvableName:
+            return
+
+        # only handle a single subject?
+        if len(subjects) != 1:
+            return
+
+        # couldn't find a less hacky way to check if the subject is a super()
+        if subjects[0].pytype() != '__builtin__.super':
+            return
+
+        self.add_message(self.MESSAGE_ID, node=node)

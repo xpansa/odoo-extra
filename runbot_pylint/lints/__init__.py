@@ -14,6 +14,7 @@ def register(linter):
     linter.register_checker(LiteralDictUpdate(linter))
     linter.register_checker(LeftoverDebugging(linter))
     linter.register_checker(MissingTranslationTemplate(linter))
+    linter.register_checker(NonLiteralSQL(linter))
 
 BASE_ID = 78 # completely arbitrary value
 def MSGID(code, severity='E'):
@@ -234,3 +235,70 @@ class MissingTranslationTemplate(BaseChecker):
             args=(translatable, modname),
             node=node,
         )
+
+class NonLiteralSQL(BaseChecker):
+    """
+    Flags .execute(s) calls which are given non-literal SQL queries as they
+    should be reviewed in more details as possible security risks.
+    """
+    __implements__ = [IAstroidChecker]
+
+    name = MESSAGE_ID = 'non-literal-sql'
+
+    msgs = {
+        MSGID(4, severity='W'): (
+            "Executing a non-literal SQL query, please verify dynamic SQL"
+            " is required and check for SQL injection risks",
+            MESSAGE_ID,
+            "Checks .execute(s) calls for non-literal SQL parameter",
+        )
+    }
+
+    def visit_call(self, node):
+        # check that it's a call to .execute
+        if not isinstance(node.func, astroid.Attribute):
+            return
+        if node.func.attrname != 'execute':
+            return
+        # with at least one parameter
+        if not node.args:
+            return
+
+        if not self.linter.is_message_enabled(self.MESSAGE_ID, line=node.fromlineno):
+            return
+
+        if is_constant_string(node.args[0]):
+            return
+
+        self.add_message(self.MESSAGE_ID, node=node)
+
+def is_constant_string(node):
+    # an actual string literal is a constant string
+    if is_literal_string(node):
+        return True
+
+    # if it's not a name, it probably can't be a constant string for our
+    # purposes
+    if not isinstance(node, astroid.Name):
+        return False
+
+    # check where the name comes from
+    _, bindings = node.lookup(node.name)
+    for target in bindings:
+        parent = target.parent
+        if isinstance(parent, (astroid.Assign, astroid.AugAssign)):
+            # if the binding was created by assigning a constant
+            # string or appending a constant string to a constant
+            # string, it's fine
+            if is_literal_string(parent.value):
+                continue
+        # other bindings are all considered non-constant strings
+        return False
+
+    return True
+
+def is_literal_string(node):
+    return (
+        isinstance(node, astroid.Const)
+        and isinstance(node.value, basestring)
+    )

@@ -120,6 +120,7 @@ ref('runbot_pylint.lint_config'),
     'update-literal',
     'debugging-leftover',
     'translation-missing',
+    'non-literal-sql',
 ] ]"/>
 
     <record id="runbot.view_runbot_pylint_configuration" model="ir.ui.view">

@@ -4,7 +4,7 @@ import unittest
 import astroid
 from pylint.testutils import CheckerTestCase, UnittestLinter
 
-from ..lints import LeftoverDebugging, LiteralDictUpdate
+from ..lints import LeftoverDebugging, LiteralDictUpdate, NonLiteralSQL
 
 
 # support line= kwarg in is_message_enabled of mock linter cf PyCQA/pylint/pull/809
@@ -124,5 +124,68 @@ class TestLeftoverDebugging(CheckerCase):
 
         self.walk(astroid.parse("""
         pudb.pm()
+        """))
+        self.assertNotEqual(self.linter.release_messages(), [])
+
+class TestNonLiteralSQL(CheckerCase):
+    """
+    uses empty strings as the actual content of the strings is not observed
+    and irrelevant
+    """
+    CHECKER_CLASS = NonLiteralSQL
+
+    def test_literal(self):
+        with self.assertNoMessages():
+            self.walk(astroid.parse("""
+            cr.execute('')
+            """))
+
+    def test_name_constant(self):
+        with self.assertNoMessages():
+            self.walk(astroid.parse("""
+            foo = ''
+            cr.execute(foo)
+            """))
+
+    def test_concat_constants(self):
+        with self.assertNoMessages():
+            self.walk(astroid.parse("""
+            foo = ''
+            if cond:
+                foo += ''
+            cr.execute(foo)
+            """))
+
+    def test_computed(self):
+        self.walk(astroid.parse("""
+        foo = get_query()
+        cr.execute(foo)
+        """))
+        self.assertNotEqual(self.linter.release_messages(), [])
+
+    def test_computed_replacement(self):
+        self.walk(astroid.parse("""
+        foo = ''
+        if cond:
+            foo = thing()
+        cr.execute(foo)
+        """))
+        self.assertNotEqual(self.linter.release_messages(), [])
+
+    def test_concat_computed(self):
+        self.walk(astroid.parse("""
+        foo = ''
+        if cond:
+            foo += thing()
+        cr.execute(foo)
+        """))
+        self.assertNotEqual(self.linter.release_messages(), [])
+
+    def test_concat_computed2(self):
+        self.walk(astroid.parse("""
+        foo = ''
+        if cond:
+            foo = foo + thing()
+        cr.execute(foo)
         """))
         self.assertNotEqual(self.linter.release_messages(), [])

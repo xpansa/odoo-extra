@@ -1,2 +1,2 @@
-from . import res_config
-from . import runbot
+from . import models
+from . import lints

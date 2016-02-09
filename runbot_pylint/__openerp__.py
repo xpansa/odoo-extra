@@ -1,11 +1,12 @@
 {
     'name': 'Runbot Lint',
+    'description': "Runbot Pylint integration",
     'category': 'Website',
-    'summary': 'Runbot Pylint integration',
     'version': '1.0',
     'author': 'Odoo SA',
     'depends': ['runbot'],
     'data': [
-        'runbot.xml',
+        'data/runbot.xml',
+        'security/ir.model.access.csv',
     ],
 }

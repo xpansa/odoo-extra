@@ -5,7 +5,6 @@ from openerp import api, fields, models
 from openerp.tools.translate import _
 
 from . import lint
-from . import lints
 
 logger = logging.getLogger(__name__)
 class RunbotConfig(models.TransientModel):

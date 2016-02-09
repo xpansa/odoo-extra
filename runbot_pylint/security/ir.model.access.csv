@@ -1,0 +1,5 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_runbot_pylint_config,access_runbot_pylint_config,model_runbot_pylint_config,runbot.group_user,1,0,0,0
+access_runbot_pylint_config,access_runbot_pylint_config,model_runbot_pylint_config,runbot.group_runbot_admin,1,1,1,1
+access_runbot_pylint_config_lint,access_runbot_pylint_config_lint,model_runbot_pylint_config_lint,runbot.group_user,1,0,0,0
+access_runbot_pylint_config_lint,access_runbot_pylint_config_lint,model_runbot_pylint_config_lint,runbot.group_runbot_admin,1,1,1,1

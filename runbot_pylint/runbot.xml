@@ -1,0 +1,36 @@
+<odoo>
+    <template id="runbot_pylint.showstate">
+        <t t-if="lint_state and lint_state != 'empty'">
+            <t t-if="lint_state == 'success'">
+                <i class="fa fa-file-text-o text-success"
+                   title="linting returned no error"/>
+            </t>
+            <t t-if="lint_state == 'pending'">
+                <i class="fa fa-file-text-o text-warning"
+                   title="linting in progress"/>
+            </t>
+            <t t-if="lint_state in ('failure', 'error')">
+                <i class="fa fa-file-text text-danger"
+                   title="linting failed or generated at least one message"/>
+            </t>
+        </t>
+    </template>
+
+    <template id="runbot_pylint.repo" inherit_id="runbot.repo">
+        <xpath expr="//tr[@t-foreach='branches']/td[1]/*[3]" position="after">
+            <t t-call="runbot_pylint.showstate">
+                <t t-set="lint_state" t-value="br['branch'].lint"/>
+            </t>
+        </xpath>
+    </template>
+
+    <template id="runbot_pylint.build" inherit_id="runbot.build">
+        <xpath expr="//div[@class='navbar-header']" position="inside">
+            <span class="navbar-brand">
+                <t t-call="runbot_pylint.showstate">
+                    <t t-set="lint_state" t-value="br['branch'].lint"/>
+                </t>
+            </span>
+        </xpath>
+    </template>
+</odoo>

@@ -4,7 +4,7 @@ import re
 
 import requests
 
-from openerp import api, models
+from openerp import api, models, fields
 from pylint.lint import fix_import_path
 
 from . import lint
@@ -121,6 +121,17 @@ ENABLED_LINTS = [
     'binary-op-exception',
 ]
 
+class RunbotBranch(models.Model):
+    _inherit = 'runbot.branch'
+
+    lint = fields.Selection([
+        ('empty', "not linted"),
+        ('pending', "linting pull request"),
+        ('success', "lint succeeded"),
+        ('failure', "lint failed"),
+        ('error', "error while linting"),
+    ], default='empty', required=True)
+
 class runbot_build(models.Model):
     _inherit = "runbot.build"
 
@@ -131,6 +142,7 @@ class runbot_build(models.Model):
 
         _logger.info("lint state of %s changed to %s (%s)",
                      self.name, state, description)
+        self.branch_id.lint = state
         self.repo_id.github('/repos/:owner/:repo/statuses/%s' % self.name, {
             'state': state,
             'description': description or "Linting",

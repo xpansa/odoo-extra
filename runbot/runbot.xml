@@ -113,7 +113,7 @@
                      <button name="reset" type="object" string="Reset"/>
                 </header>
                 <sheet>
-                    <group>
+                    <group name="group_params">
                         <field name="repo_id"/>
                         <field name="branch_id"/>
                         <field name="sequence"/>

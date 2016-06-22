@@ -596,9 +596,9 @@ class runbot_build(osv.osv):
 
         # detect duplicate
         domain = [
-            ('repo_id','=',build.repo_id.duplicate_id.id), 
-            ('name', '=', build.name), 
-            ('duplicate_id', '=', False), 
+            ('repo_id','=',build.repo_id.duplicate_id.id),
+            ('name', '=', build.name),
+            ('duplicate_id', '=', False),
             '|', ('result', '=', False), ('result', '!=', 'skipped')
         ]
         duplicate_ids = self.search(cr, uid, domain, context=context)
@@ -1231,7 +1231,7 @@ class RunbotController(http.Controller):
         repo_ids = repo_obj.search(cr, uid, [])
         repos = repo_obj.browse(cr, uid, repo_ids)
         if not repo and repos:
-            repo = repos[0] 
+            repo = repos[0]
 
         context = {
             'repos': repos,
@@ -1265,20 +1265,20 @@ class RunbotController(http.Controller):
                 branch_ids = uniq_list(sticky_branch_ids + [br[0] for br in cr.fetchall()])
 
                 build_query = """
-                    SELECT 
-                        branch_id, 
+                    SELECT
+                        branch_id,
                         max(case when br_bu.row = 1 then br_bu.build_id end),
                         max(case when br_bu.row = 2 then br_bu.build_id end),
                         max(case when br_bu.row = 3 then br_bu.build_id end),
                         max(case when br_bu.row = 4 then br_bu.build_id end)
                     FROM (
-                        SELECT 
-                            br.id AS branch_id, 
+                        SELECT
+                            br.id AS branch_id,
                             bu.id AS build_id,
                             row_number() OVER (PARTITION BY branch_id) AS row
-                        FROM 
-                            runbot_branch br INNER JOIN runbot_build bu ON br.id=bu.branch_id 
-                        WHERE 
+                        FROM
+                            runbot_branch br INNER JOIN runbot_build bu ON br.id=bu.branch_id
+                        WHERE
                             br.id in %s
                         GROUP BY br.id, bu.id
                         ORDER BY br.id, bu.id DESC
@@ -1303,7 +1303,7 @@ class RunbotController(http.Controller):
                 }
 
             context.update({
-                'branches': [branch_info(b) for b in branches],
+                'branches': [branch_info(b) for b in branches if b.id in build_by_branch_ids],
                 'testing': count([('repo_id','=',repo.id), ('state','=','testing')]),
                 'running': count([('repo_id','=',repo.id), ('state','=','running')]),
                 'pending': count([('repo_id','=',repo.id), ('state','=','pending')]),
